@@ -41,9 +41,27 @@ def atr(df, n=20):
 def load_history(symbol: str, days: int = DATA_DAYS) -> pd.DataFrame:
     period = f"{days}d"
     df = yf.download(symbol, period=period, interval="1d", auto_adjust=True, progress=False)
-
+    if df is None or df.empty:
+        raise ValueError(f"No data returned for {symbol}")
+    # Flatten MultiIndex: often level 0=field, level 1=ticker
     if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+        try:
+            df = df.xs(symbol, axis=1, level=-1, drop_level=True)
+        except Exception:
+            df = df.groupby(level=0, axis=1).first()
+    # Normalize names and dedupe
+    df.columns = [str(c).title() for c in df.columns]
+    if df.columns.duplicated().any():
+        df = df.loc[:, ~df.columns.duplicated()]
+    wanted = [c for c in ["Open","High","Low","Close","Adj Close","Volume"] if c in df.columns]
+    df = df[wanted].copy()
+    for c in list(df.columns):
+        if hasattr(df[c], 'ndim') and getattr(df[c], 'ndim', 1) > 1:
+            df[c] = df[c].iloc[:,0]
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df.index = pd.to_datetime(df.index, utc=True)
+    df = df.dropna(how="any")
+    return df
 
     df = df.rename(columns=lambda c: str(c).title())
 
@@ -187,6 +205,11 @@ def load_state(symbol, start_equity):
 
 def save_state(symbol, st):
     with open(state_path(symbol), "w") as f: json.dump(st, f, indent=2)
+try:
+    with open("paper.log","a") as _f:
+        _f.write(status + "\n")
+except Exception:
+    pass
 
 
 def append_trade(symbol, date, side, price, qty, reason):
@@ -196,11 +219,12 @@ def append_trade(symbol, date, side, price, qty, reason):
     else:
         df.to_csv(trades_path(symbol), index=False)
 
-
-def paper_step(symbol="BTC-USD", start_equity=10.0):
-    df = load_history(symbol, days=400)
-    if len(df) < 220:
-        print("Not enough data.");
+        def paper_step(symbol="BTC-USD", start_equity=10.0, force=False, verbose=False):
+            df = load_history(symbol, days=400)
+        if len(df) >= 220:
+            pass
+        else:
+            print("Not enough data.");
         return
     long_entry, trail_stop = momentum_signals(df)
     regime = regime_filter(df)
@@ -212,9 +236,17 @@ def paper_step(symbol="BTC-USD", start_equity=10.0):
     entry_signal = bool(regime.iloc[bar_idx] and long_entry.iloc[bar_idx])
     st = load_state(symbol, start_equity)
     prev_day = df.index[-2].date()
-    if st.get("last_processed_date") == str(prev_day):
-        print("Already processed", prev_day);
+    if st.get("last_processed_date") == str(prev_day) and not force:
+        msg = f"Already processed {prev_day}; use --force to reprocess."
+        if verbose:
+            print(msg)
+        try:
+            with open("paper.log","a") as _f:
+                _f.write(status + "\n")
+        except Exception:
+            pass
         return
+
     equity = st["equity"];
     high_water = st["high_water"];
     floor = st["floor"];
@@ -253,22 +285,33 @@ def paper_step(symbol="BTC-USD", start_equity=10.0):
                "last_processed_date": str(prev_day),
                "position": {"qty": float(pos_qty or 0.0), "entry": float(entry_px) if entry_px else None}})
     save_state(symbol, st)
-    print(
-        f"[{date.date()}] equity={equity_mtm2:.2f} pos_qty={pos_qty or 0.0:.6f} entry={entry_px} floor={floor:.2f} cushion={equity_mtm2 - floor:.2f}")
-
-
+    # --- status output (must be inside paper_step) ---
+    status_date = date.date() if hasattr(date, "date") else pd.Timestamp.utcnow().date()
+    status = (f"[{status_date}] equity={equity_mtm2:.2f} "
+              f"pos_qty={pos_qty or 0.0:.6f} entry={entry_px} "
+              f"floor={floor:.2f} cushion={(equity_mtm2 - floor):.2f}")
+    if verbose:
+        print(status)
+    try:
+        with open("paper.log", "a") as _f:
+            _f.write(status + "\n")
+    except Exception:
+        pass
 def main():
     p = argparse.ArgumentParser(description="Daily momentum paper bot with CPPI/lockbox")
     p.add_argument("mode", choices=["backtest", "paper", "reset"], help="Operation mode")
     p.add_argument("--symbol", default="BTC-USD", help="Symbol, e.g., BTC-USD or ETH-USD")
     p.add_argument("--start", type=float, default=10.0, help="Starting equity")
+    p.add_argument("--force", action="store_true", help="Reprocess the last completed day even if already processed")
+    p.add_argument("--verbose", action="store_true", help="Print status even if skipping")
     args = p.parse_args()
     if args.mode == "backtest":
         res = backtest(symbol=args.symbol, start_equity=args.start)
         print(
             f"Backtest {args.symbol} start={args.start:.2f} final={res['final_equity']:.2f} trades={len(res['trades'])}")
     elif args.mode == "paper":
-        paper_step(symbol=args.symbol, start_equity=args.start)
+        paper_step(symbol=args.symbol, start_equity=args.start,
+                   force=args.force, verbose=args.verbose)
     elif args.mode == "reset":
         sp, tp = state_path(args.symbol), trades_path(args.symbol)
         if os.path.exists(sp): os.remove(sp)
