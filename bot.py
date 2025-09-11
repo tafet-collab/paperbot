@@ -124,8 +124,16 @@ def backtest(symbol="BTC-USD", start_equity=200.0):
         date = df.index[i];
         px = row["Close"];
         a = atr(df, 20).iloc[i]
-        risk = update_risk_state(equity if pos_qty == 0 else equity + pos_qty * (px - entry_px),
-                                 high_water, floor, lockbox, avgDailyProfit)
+        risk_state = update_risk_state(
+            equity if pos_qty == 0 else equity + pos_qty * (px - entry_px),
+            high_water,
+            floor,
+            lockbox,
+            avgDailyProfit,
+        )
+        high_water = risk_state["high_water"]
+        floor = risk_state["floor"]
+        risk = risk_state
         if pos_qty > 0:
             stop = trail_stop.iloc[i]
             if not np.isnan(stop) and px <= stop:
@@ -223,7 +231,10 @@ def paper_step(symbol="BTC-USD", start_equity=10.0):
     pos_qty = st["position"]["qty"];
     entry_px = st["position"]["entry"]
     equity_mtm = equity + (pos_qty * (px - entry_px) if pos_qty and entry_px else 0.0)
-    risk = update_risk_state(equity_mtm, high_water, floor, lockbox, avgDailyProfit)
+    risk_state = update_risk_state(equity_mtm, high_water, floor, lockbox, avgDailyProfit)
+    high_water = risk_state["high_water"]
+    floor = risk_state["floor"]
+    risk = risk_state
     if pos_qty and entry_px and not np.isnan(stop_trail) and px <= stop_trail:
         exit_px = apply_fees_slippage(stop_trail, "sell")
         equity += pos_qty * (exit_px - entry_px)
