@@ -1,0 +1,12 @@
+{
+  "equity": 10.0,
+  "high_water": 10.0,
+  "floor": 10.0,
+  "lockbox": 0.0,
+  "avgDailyProfit": 0.0,
+  "last_processed_date": "2025-09-09",
+  "position": {
+    "qty": 0.0,
+    "entry": null
+  }
+}

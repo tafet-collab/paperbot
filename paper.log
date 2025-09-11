@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/Users/davidsorlini/paperbot/bot.py", line 210, in <module>
+    main()
+    ~~~~^^
+  File "/Users/davidsorlini/paperbot/bot.py", line 202, in main
+    paper_step(symbol=args.symbol, start_equity=args.start)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/davidsorlini/paperbot/bot.py", line 153, in paper_step
+    long_entry, trail_stop = momentum_signals(df)
+                             ~~~~~~~~~~~~~~~~^^^^
+  File "/Users/davidsorlini/paperbot/bot.py", line 51, in momentum_signals
+    long_entry = df['Close'] > entry_lvl
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/davidsorlini/paperbot/.venv/lib/python3.13/site-packages/pandas/core/ops/common.py", line 76, in new_method
+    return method(self, other)
+  File "/Users/davidsorlini/paperbot/.venv/lib/python3.13/site-packages/pandas/core/arraylike.py", line 56, in __gt__
+    return self._cmp_method(other, operator.gt)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/davidsorlini/paperbot/.venv/lib/python3.13/site-packages/pandas/core/frame.py", line 7904, in _cmp_method
+    self, other = self._align_for_op(other, axis, flex=False, level=None)
+                  ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/davidsorlini/paperbot/.venv/lib/python3.13/site-packages/pandas/core/frame.py", line 8203, in _align_for_op
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: Can only compare identically-labeled (both index and columns) DataFrame objects
