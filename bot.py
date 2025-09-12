@@ -219,23 +219,23 @@ def append_trade(symbol, date, side, price, qty, reason):
     else:
         df.to_csv(trades_path(symbol), index=False)
 
-        def paper_step(symbol="BTC-USD", start_equity=10.0, force=False, verbose=False):
+def paper_step(symbol="BTC-USD", start_equity=10.0, force=False, verbose=False):
             df = load_history(symbol, days=400)
-        if len(df) >= 220:
-            pass
-        else:
-            print("Not enough data.");
-        return
-    long_entry, trail_stop = momentum_signals(df)
-    regime = regime_filter(df)
-    bar_idx = -2  # last completed day
-    date = df.index[bar_idx];
-    px = df["Close"].iloc[bar_idx]
-    a = atr(df, 20).iloc[bar_idx];
-    stop_trail = trail_stop.iloc[bar_idx]
-    entry_signal = bool(regime.iloc[bar_idx] and long_entry.iloc[bar_idx])
-    st = load_state(symbol, start_equity)
-    prev_day = df.index[-2].date()
+    if len(df) >= 220:
+       pass
+    else:
+       print("Not enough data.");
+    return
+      long_entry, trail_stop = momentum_signals(df)
+      regime = regime_filter(df)
+      bar_idx = -2  # last completed day
+      date = df.index[bar_idx];
+      px = df["Close"].iloc[bar_idx]
+      a = atr(df, 20).iloc[bar_idx];
+      stop_trail = trail_stop.iloc[bar_idx]
+      entry_signal = bool(regime.iloc[bar_idx] and long_entry.iloc[bar_idx])
+      st = load_state(symbol, start_equity)
+      prev_day = df.index[-2].date()
     if st.get("last_processed_date") == str(prev_day) and not force:
         msg = f"Already processed {prev_day}; use --force to reprocess."
         if verbose:
