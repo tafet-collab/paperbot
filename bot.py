@@ -10,12 +10,20 @@ import datetime as dt
 from dateutil import tz
 import numpy as np
 import pandas as pd
+import logging
 
 try:
     import yfinance as yf
 except Exception:
     print("Install dependencies first: pip install -r requirements.txt")
     raise
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+_fh = logging.FileHandler("paper.log")
+_fh.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(_fh)
 
 DATA_DAYS = 800
 FEE_BP = 10  # 0.10% per side
@@ -205,11 +213,6 @@ def load_state(symbol, start_equity):
 
 def save_state(symbol, st):
     with open(state_path(symbol), "w") as f: json.dump(st, f, indent=2)
-try:
-    with open("paper.log","a") as _f:
-        _f.write(status + "\n")
-except Exception:
-    pass
 
 
 def append_trade(symbol, date, side, price, qty, reason):
@@ -220,83 +223,86 @@ def append_trade(symbol, date, side, price, qty, reason):
         df.to_csv(trades_path(symbol), index=False)
 
 def paper_step(symbol="BTC-USD", start_equity=10.0, force=False, verbose=False):
-            df = load_history(symbol, days=400)
-    if len(df) >= 220:
-       pass
-    else:
-       print("Not enough data.");
-    return
-      long_entry, trail_stop = momentum_signals(df)
-      regime = regime_filter(df)
-      bar_idx = -2  # last completed day
-      date = df.index[bar_idx];
-      px = df["Close"].iloc[bar_idx]
-      a = atr(df, 20).iloc[bar_idx];
-      stop_trail = trail_stop.iloc[bar_idx]
-      entry_signal = bool(regime.iloc[bar_idx] and long_entry.iloc[bar_idx])
-      st = load_state(symbol, start_equity)
-      prev_day = df.index[-2].date()
-    if st.get("last_processed_date") == str(prev_day) and not force:
-        msg = f"Already processed {prev_day}; use --force to reprocess."
-        if verbose:
-            print(msg)
-        try:
-            with open("paper.log","a") as _f:
-                _f.write(status + "\n")
-        except Exception:
-            pass
+    df = load_history(symbol, days=400)
+    if len(df) < 220:
+        logger.warning("Not enough data.")
         return
 
-    equity = st["equity"];
-    high_water = st["high_water"];
-    floor = st["floor"];
+    long_entry, trail_stop = momentum_signals(df)
+    regime = regime_filter(df)
+
+    bar_idx = -2  # last completed day
+    date = df.index[bar_idx]
+    px = df["Close"].iloc[bar_idx]
+    a = atr(df, 20).iloc[bar_idx]
+    stop_trail = trail_stop.iloc[bar_idx]
+    entry_signal = bool(regime.iloc[bar_idx] and long_entry.iloc[bar_idx])
+    st = load_state(symbol, start_equity)
+    prev_day = df.index[-2].date()
+
+    if st.get("last_processed_date") == str(prev_day) and not force:
+        msg = f"Already processed {prev_day}; use --force to reprocess."
+        logger.info(msg)
+        return
+
+    equity = st["equity"]
+    high_water = st["high_water"]
+    floor = st["floor"]
     lockbox = st["lockbox"]
-    avgDailyProfit = st["avgDailyProfit"];
-    pos_qty = st["position"]["qty"];
+    avgDailyProfit = st["avgDailyProfit"]
+    pos_qty = st["position"]["qty"]
     entry_px = st["position"]["entry"]
     equity_mtm = equity + (pos_qty * (px - entry_px) if pos_qty and entry_px else 0.0)
     risk = update_risk_state(equity_mtm, high_water, floor, lockbox, avgDailyProfit)
+
     if pos_qty and entry_px and not np.isnan(stop_trail) and px <= stop_trail:
         exit_px = apply_fees_slippage(stop_trail, "sell")
         equity += pos_qty * (exit_px - entry_px)
         append_trade(symbol, str(date.date()), "sell", float(exit_px), float(pos_qty), "exit_stop")
-        pos_qty = 0.0;
+        pos_qty = 0.0
         entry_px = None
+
     if (not pos_qty) and entry_signal and not np.isnan(a):
         stop = px - 2 * a
         qty = position_size(px, stop, risk["risk_per_trade"], min_notional=0.0, price_precision=6)
         if qty > 0:
             entry = apply_fees_slippage(px, "buy")
-            pos_qty = qty;
+            pos_qty = qty
             entry_px = entry
             append_trade(symbol, str(date.date()), "buy", float(entry), float(qty), "entry")
+
     equity_mtm2 = equity + (pos_qty * (px - entry_px) if pos_qty and entry_px else 0.0)
     high_water = max(high_water, equity_mtm2)
-    alpha = 0.3;
+    alpha = 0.3
     day_pnl = equity_mtm2 - st["equity"]
     avgDailyProfit = (1 - alpha) * avgDailyProfit + alpha * max(0.0, day_pnl)
+
     if date.weekday() == 6 and equity_mtm2 > floor:
-        gain = equity_mtm2 - floor;
-        siphon = 0.5 * gain;
-        lockbox += siphon;
+        gain = equity_mtm2 - floor
+        siphon = 0.5 * gain
+        lockbox += siphon
         floor = max(floor, lockbox)
-    st.update({"equity": float(equity_mtm2), "high_water": float(high_water), "floor": float(floor),
-               "lockbox": float(lockbox), "avgDailyProfit": float(avgDailyProfit),
-               "last_processed_date": str(prev_day),
-               "position": {"qty": float(pos_qty or 0.0), "entry": float(entry_px) if entry_px else None}})
+
+    st.update({
+        "equity": float(equity_mtm2),
+        "high_water": float(high_water),
+        "floor": float(floor),
+        "lockbox": float(lockbox),
+        "avgDailyProfit": float(avgDailyProfit),
+        "last_processed_date": str(prev_day),
+        "position": {"qty": float(pos_qty or 0.0), "entry": float(entry_px) if entry_px else None},
+    })
     save_state(symbol, st)
+
     # --- status output (must be inside paper_step) ---
     status_date = date.date() if hasattr(date, "date") else pd.Timestamp.utcnow().date()
-    status = (f"[{status_date}] equity={equity_mtm2:.2f} "
-              f"pos_qty={pos_qty or 0.0:.6f} entry={entry_px} "
-              f"floor={floor:.2f} cushion={(equity_mtm2 - floor):.2f}")
-    if verbose:
-        print(status)
-    try:
-        with open("paper.log", "a") as _f:
-            _f.write(status + "\n")
-    except Exception:
-        pass
+    status = (
+        f"[{status_date}] equity={equity_mtm2:.2f} "
+        f"pos_qty={pos_qty or 0.0:.6f} entry={entry_px} "
+        f"floor={floor:.2f} cushion={(equity_mtm2 - floor):.2f}"
+    )
+    logger.info(status)
+
 def main():
     p = argparse.ArgumentParser(description="Daily momentum paper bot with CPPI/lockbox")
     p.add_argument("mode", choices=["backtest", "paper", "reset"], help="Operation mode")
