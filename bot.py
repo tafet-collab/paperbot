@@ -63,15 +63,6 @@ def load_history(symbol: str, days: int = DATA_DAYS) -> pd.DataFrame:
     df = df.dropna(how="any")
     return df
 
-    df = df.rename(columns=lambda c: str(c).title())
-
-    keep = [c for c in ["Open", "High", "Low", "Close", "Adj Close", "Volume"] if c in df.columns]
-
-    df = df[keep].copy()
-    df.index = pd.to_datetime(df.index, utc=True)
-    df = df.dropna(how="any")
-    return df
-
 
 def regime_filter(df: pd.DataFrame, vol_cap_annual=1.2) -> pd.Series:
     close = df["Close"].astype(float)  # force Series
